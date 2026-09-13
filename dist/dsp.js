@@ -37,18 +37,6 @@ export function detectPitch(samples, sampleRate, minHz = 55, maxHz = 1400) {
   return { frequency, midi, cents: 1200 * Math.log2(frequency / (440 * 2 ** ((midi - 69) / 12))), confidence: 1 - b };
 }
 
-export function makeCurve(model = 'clean', size = 4096) {
-  const curve = new Float32Array(size);
-  const hardness = { clean: 1.2, chime: 1.8, crunch: 2.5, lead: 3.4, overdrive: 2.2 }[model] || 1.2;
-  const asymmetry = model === 'chime' ? 0.12 : model === 'crunch' ? 0.07 : 0;
-  const offset = Math.tanh(hardness * asymmetry);
-  for (let i = 0; i < size; i++) {
-    const x = i * 2 / (size - 1) - 1;
-    curve[i] = (Math.tanh(hardness * (x + asymmetry)) - offset) / (1 + Math.abs(offset));
-  }
-  return curve;
-}
-
 // Seeded, decaying noise models a diffuse room; this is not a measured cabinet IR.
 export function createRoomImpulse(context, seconds, tone = 55) {
   const frames = Math.floor(context.sampleRate * seconds);

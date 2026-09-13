@@ -1,0 +1,38 @@
+VOLTAGE — THIRD-PARTY CABINET CREDITS
+
+Cabinet impulse responses by Jester Dyne Productions / Bastian Karschewski.
+Both source-pack handbooks dedicate the IRs under Creative Commons CC0 1.0.
+License: https://creativecommons.org/publicdomain/zero/1.0/
+Legal code: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+GREENBACK — cabinets/greenback.wav
+Source: Emerald Pack 1.0
+https://www.jester-dyne-productions.com/emerald-ir-pack/
+https://www.jester-dyne-productions.com/content/files/2023/04/Emerald-Pack-1.0.zip
+Original file: Emerald Pack 1.0/Impulses/48kHz/3_Wasabi_Warrior_48.wav
+Capture: 1998 Marshall 1960AX, Celestion Greenback G12M25W speakers,
+Shure SM57 on the upper-left speaker. Microphone angle unspecified.
+
+VINTAGE 30 — cabinets/v30.wav
+Source: Jester's Brutal Pack 1.0
+https://www.jester-dyne-productions.com/brutal-ir-pack/
+https://www.jester-dyne-productions.com/content/files/2023/04/JestersBrutalPack_1.0.zip
+Original file: Jesters_Brutal_Pack_1.0/Impulses/48kHz/1_Cookie_Monster.wav
+Capture: modified oversized Behringer BG412S cabinet, Celestion Vintage 30
+speakers, Shure SM57 on an upper speaker. Microphone angle unspecified.
+
+The redistributed mono 48 kHz / 24-bit WAV files are unchanged.
+At runtime Voltage resamples to the audio context's rate, retains the first
+85 ms with the original onset, fades the final 10 ms and calibrates their
+midrange response. Custom IRs retain their full permitted length and use
+the same reference-band calibration.
+
+Original handbooks, including each CC0 notice on page 3, are retained at:
+https://github.com/Yohann-Gentelet/voltage-guitar-studio/tree/main/docs/licenses
+
+Amp design, equations, research references and measurement method:
+https://github.com/Yohann-Gentelet/voltage-guitar-studio/blob/main/docs/amp-model.md
+
+Manufacturer names identify the captured hardware. Voltage is not affiliated
+with or endorsed by these manufacturers. Its amp voices are original
+behavioral designs; only the identified cabinet recordings are measured IRs.

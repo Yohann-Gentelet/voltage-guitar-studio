@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {createAmpGraph} from '../dist/audio-engine.js';
 import {DEFAULT_SETTINGS,clone} from '../dist/settings.js';
+import {AmpDSP,VOICE_IDS} from '../dist/amp-dsp.js';
 
 // Native-node contract doubles verify graph topology/parameters, not native DSP.
 class Param {
@@ -20,7 +21,7 @@ class Node {
   stop(){this.stopped=true;}
 }
 class Context {
-  constructor(){this.sampleRate=48000;this.currentTime=0;this.nodes=[];this.processors={};this.audioWorklet={addModule:async url=>vm.runInNewContext(readFileSync(url,'utf8'),{sampleRate:this.sampleRate,Math,Float32Array,Float64Array,AudioWorkletProcessor:class{},registerProcessor:(name,klass)=>this.processors[name]=klass})};}
+  constructor(){this.sampleRate=48000;this.currentTime=0;this.nodes=[];this.processors={};this.audioWorklet={addModule:async url=>vm.runInNewContext(readFileSync(url,'utf8').replace(/^import .+;$/gm,''),{AmpDSP,VOICE_IDS,sampleRate:this.sampleRate,Math,Float32Array,Float64Array,AudioWorkletProcessor:class{},registerProcessor:(name,klass)=>this.processors[name]=klass})};}
   createGain(){return new Node(this,'gain');}
   createAnalyser(){return new Node(this,'analyser');}
   createDynamicsCompressor(){return new Node(this,'compressor');}
@@ -31,13 +32,13 @@ class Context {
   createDelay(){return new Node(this,'delay');}
   createBuffer(channels,length,rate){const data=Array.from({length:channels},()=>new Float32Array(length));return{sampleRate:rate,numberOfChannels:channels,length,getChannelData:c=>data[c]};}
 }
-async function withGraph(run){
+async function withGraph(run,makeBuffers=()=>({})){
   const previous=globalThis.AudioWorkletNode;
   globalThis.AudioWorkletNode=class extends Node{
     constructor(ctx,name){super(ctx,name);assert.ok(ctx.processors[name],'worklet must be registered before construction');this.parameters=new Map((ctx.processors[name].parameterDescriptors||[]).map(p=>[p.name,new Param(this,p.defaultValue)]));this.port={closed:false,close(){this.closed=true;}};}
   };
   let graph;
-  try{const ctx=new Context();graph=await createAmpGraph(ctx,clone(DEFAULT_SETTINGS));await run(ctx,graph);}finally{graph?.dispose();globalThis.AudioWorkletNode=previous;}
+  try{const ctx=new Context();graph=await createAmpGraph(ctx,clone(DEFAULT_SETTINGS),{cabinetBuffers:makeBuffers(ctx)});await run(ctx,graph);}finally{graph?.dispose();globalThis.AudioWorkletNode=previous;}
 }
 const find=(ctx,name)=>ctx.nodes.find(n=>n.kind===name);
 function reaches(from,to){const seen=new Set(),queue=[from];while(queue.length){const n=queue.shift();if(n===to)return true;if(seen.has(n)||!(n instanceof Node))continue;seen.add(n);queue.push(...n.connections);}return false;}
@@ -62,5 +63,24 @@ test('ring modulation drives a zero-offset multiplier and independently filters 
 }));
 test('graph cleanup stops every modulation oscillator and closes every worklet port',async()=>withGraph((ctx,graph)=>{
   graph.dispose();const oscillators=ctx.nodes.filter(n=>n.kind==='oscillator'),worklets=ctx.nodes.filter(n=>n.port);
-  assert.equal(oscillators.length,4);assert.equal(worklets.length,6);assert.ok(oscillators.every(n=>n.stopped));assert.ok(worklets.every(n=>n.port.closed));
+  assert.equal(oscillators.length,4);assert.equal(worklets.length,7);assert.ok(oscillators.every(n=>n.stopped));assert.ok(worklets.every(n=>n.port.closed));
+}));
+
+test('measured and custom cabinets replace modeled filters and share only the final high cut',async()=>withGraph((ctx,graph)=>{
+  const amp=find(ctx,'voltage-amp'),cabIn=amp.connections[0],s=clone(DEFAULT_SETTINGS);
+  const convolvers=cabIn.connections.filter(n=>n.kind==='convolver');assert.equal(convolvers.length,2);assert.ok(convolvers.every(n=>n.normalize===false));
+  const measured=convolvers.find(n=>n.buffer),custom=convolvers.find(n=>!n.buffer),wet=measured.connections[0],processed=wet.connections[0],cut=processed.connections[0];
+  const modelGain=ctx.nodes.find(n=>n.kind==='gain'&&n.connections.includes(processed)&&n!==wet&&n!==custom.connections[0]);
+  assert.equal(cut.type,'lowpass');assert.equal(cut.frequency.value,8000);
+  s.cabinet='greenback';s.cabHighCut=6500;graph.update(s);assert.equal(wet.gain.value,1);assert.equal(modelGain.gain.value,0);assert.equal(custom.connections[0].gain.value,0);assert.equal(cut.frequency.value,6500);assert.equal(graph.cabinetFallback,false);
+  const impulse=ctx.createBuffer(1,4096,48000);impulse.getChannelData(0)[0]=1;graph.setIR(impulse);s.cabinet='custom';graph.update(s);
+  assert.equal(custom.normalize,false);assert.ok(Math.abs(custom.buffer.getChannelData(0)[0]-.8)<1e-6);assert.equal(custom.connections[0].gain.value,1);assert.equal(wet.gain.value,0);assert.equal(modelGain.gain.value,0);
+  s.cabinet='off';graph.update(s);const dry=cabIn.connections.find(n=>n.kind==='gain');assert.equal(dry.gain.value,1);assert.ok(!reaches(dry,cut));assert.equal(custom.connections[0].gain.value,0);
+},ctx=>({greenback:ctx.createBuffer(1,4080,48000)})));
+
+test('a missing measured cabinet activates its modeled fallback',async()=>withGraph((ctx,graph)=>{
+  const s=clone(DEFAULT_SETTINGS);s.cabinet='v30';graph.update(s);assert.equal(graph.cabinetFallback,true);
+  const cabinetEntry=find(ctx,'voltage-amp').connections[0],hp=cabinetEntry.connections.find(n=>n.kind==='filter');
+  assert.equal(hp.type,'highpass');assert.equal(hp.frequency.value,75);assert.equal(hp.connections[0].connections[0].frequency.value,4500);
+  s.cabinet='open';graph.update(s);assert.equal(graph.cabinetFallback,false);
 }));

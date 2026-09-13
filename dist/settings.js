@@ -1,5 +1,6 @@
 import { clamp } from './dsp.js';
 import { PRESET_FOLDERS, ORIGINAL_FOLDERS, EXTRA_PRESETS } from './preset-pack.js';
+import { CABINETS } from './cabinets.js';
 export { PRESET_FOLDERS } from './preset-pack.js';
 
 export const EFFECTS = [
@@ -18,13 +19,16 @@ export const EFFECTS = [
   { id:'reverb', name:'Reverb', description:'Make a little space.', color:'#b9afcc', bg:'#302c37', params:[['decay','Decay',0.2,6,0.1,'s'],['tone','Tone',0,100,1,'%'],['mix','Mix',0,75,1,'%']] }
 ];
 export const MODELS = {
-  clean: {name:'American Clean',tag:'WIDE & BRIGHT',drive:3,output:0.9,low:1,mid:-2,high:1},
-  chime: {name:'British Chime',tag:'SPARKLE & BITE',drive:6,output:0.72,low:-2,mid:1,high:3},
-  crunch: {name:'Vintage Crunch',tag:'WARM & RAW',drive:12,output:0.6,low:1,mid:3,high:-1},
-  lead: {name:'Modern High Gain',tag:'HEAVY & FOCUSED',drive:30,output:0.5,low:2,mid:-1,high:0}
+  clean: {name:'American Clean',tag:'OPEN & DYNAMIC'},
+  chime: {name:'British Chime',tag:'SPARKLE & BITE'},
+  edge: {name:'Tube Breakup',tag:'LIGHT DRIVE · SOFT TOUCH'},
+  crunch: {name:'Vintage Crunch',tag:'CLASSIC ROCK'},
+  lead: {name:'Modern High Gain',tag:'SUSTAIN & BODY'},
+  modern: {name:'Tight Metal',tag:'FOCUSED & PERCUSSIVE'}
 };
 export const DEFAULT_SETTINGS = {
   model:'clean', ampEnabled:true, cabinet:'open', gain:30, bass:50, middle:50, treble:60, presence:50, level:65,
+  tightness:45,sag:35,power:35,cabHighCut:8000,
   fxBypassed:false,
   effects:{
     gate:{enabled:true,threshold:-55,release:110},
@@ -50,6 +54,26 @@ function preset(id,name,subtitle,description,icon,color,patch={}) {
   for (const [key,value] of Object.entries(effects||{})) Object.assign(settings.effects[key],value);
   return {id,name,subtitle,description,icon,color,settings};
 }
+// Version 2 factory voicing does not rewrite the user's saved knob settings.
+const AMP_REVOICING={
+  california:{gain:22,power:18,tightness:25},
+  british:{cabinet:'greenback',power:38,cabHighCut:7800},
+  blues:{model:'edge',gain:58,level:62,tightness:30,sag:65,power:45,cabinet:'greenback',cabHighCut:7600},
+  heavy:{gain:72,level:60,bass:52,middle:45,treble:51,presence:44,tightness:65,sag:12,power:25,cabinet:'v30',cabHighCut:6500,effects:{overdrive:{drive:8,tone:57}}},
+  haze:{gain:62,tightness:45,sag:45,power:48,cabinet:'greenback',cabHighCut:6500,effects:{overdrive:{drive:35}}},
+  'garage-afterhours':{gain:44,power:28,cabinet:'greenback',cabHighCut:7500},
+  'shoegaze-bloom':{gain:48,power:55,sag:55,tightness:30,cabinet:'greenback',cabHighCut:7000},
+  'porch-slapback':{model:'edge',gain:18,power:15,sag:30,tightness:30},
+  'neck-pickup-jazz':{gain:15,power:10,tightness:20},
+  'copper-boost':{model:'edge',gain:65,power:42,sag:55,cabinet:'greenback',cabHighCut:7200,effects:{overdrive:{drive:16}}},
+  'desert-pulse':{gain:50,power:45,cabinet:'greenback',cabHighCut:7000},
+  'spiral-lead':{model:'lead',gain:52,tightness:48,sag:35,power:40,cabinet:'greenback',cabHighCut:7200,effects:{overdrive:{drive:22}}},
+  'iron-rhythm':{model:'modern',gain:78,level:62,bass:53,middle:54,treble:50,presence:43,tightness:70,sag:7,power:22,cabinet:'v30',cabHighCut:6500,effects:{overdrive:{enabled:false}}},
+  'low-orbit':{gain:62,power:45,tightness:35,sag:50,cabinet:'v30',cabHighCut:6200,effects:{overdrive:{drive:24}}},
+  afterburner:{gain:65,power:36,tightness:55,sag:30,cabinet:'v30',cabHighCut:6800},
+  'pixel-riot':{model:'modern',gain:58,power:25,tightness:65,sag:12,cabinet:'v30',cabHighCut:6200},
+  'molten-sweep':{gain:73,power:65,tightness:25,sag:65,cabinet:'greenback',cabHighCut:6000,effects:{overdrive:{drive:32}}}
+};
 export const PRESETS = [
   preset('california','California Clean','CLEAN · SPACIOUS','Open, glassy chords with a little room to breathe.','Ⅰ','#b9c5a5'),
   preset('british','British Invasion','CHIME · EDGE','Bright harmonics, jangling chords, and just enough bite.','Ⅱ','#cdb884',{model:'chime',gain:43,bass:44,middle:58,treble:64,cabinet:'british',effects:{reverb:{mix:14,decay:1.2},compressor:{amount:20}}}),
@@ -84,15 +108,20 @@ export const PRESETS = [
 ].map(p=>({...p,folderId:ORIGINAL_FOLDERS[p.id]})).concat(EXTRA_PRESETS.map(p=>{
   const folder=PRESET_FOLDERS.find(f=>f.id===p.folderId);
   return {...preset(p.id,p.name,p.subtitle,p.description,folder.icon,folder.color,p.patch),folderId:p.folderId};
-}));
+})).map(p=>{
+  const {effects,...amp}=AMP_REVOICING[p.id]||{},settings=clone(p.settings);Object.assign(settings,amp);
+  for(const [id,patch] of Object.entries(effects||{}))Object.assign(settings.effects[id],patch);
+  return {...p,settings};
+});
 
 export function sanitizeSettings(value) {
   const settings=clone(DEFAULT_SETTINGS);
   if (!value || typeof value!=='object') return settings;
   if (Object.hasOwn(MODELS,value.model)) settings.model=value.model;
-  if (['open','british','stack','off','custom'].includes(value.cabinet)) settings.cabinet=value.cabinet;
+  if (Object.hasOwn(CABINETS,value.cabinet)||value.cabinet==='custom') settings.cabinet=value.cabinet;
   if(typeof value.customIRId==='string'&&/^[a-f0-9]{64}$/.test(value.customIRId))settings.customIRId=value.customIRId;
-  for (const key of ['gain','bass','middle','treble','presence','level']) if (Number.isFinite(value[key])) settings[key]=clamp(value[key],0,100);
+  for (const key of ['gain','bass','middle','treble','presence','level','tightness','sag','power']) if (Number.isFinite(value[key])) settings[key]=clamp(value[key],0,100);
+  if(Number.isFinite(value.cabHighCut))settings.cabHighCut=clamp(value.cabHighCut,3000,16000);
   for (const key of ['ampEnabled','fxBypassed']) if (typeof value[key]==='boolean') settings[key]=value[key];
   for (const effect of EFFECTS) {
     const source=value.effects?.[effect.id];

@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs",
-    "check": "node --check dist/app.js && node --check dist/audio-engine.js && node --check dist/gate-worklet.js && node --check dist/texture-worklet.js && node --check dist/settings.js && node --check dist/preset-pack.js && node --check dist/library.js",
-    "test": "node --test tests/*.test.mjs"
+    "check": "node --check dist/app.js && node --check dist/audio-engine.js && node --check dist/amp-dsp.js && node --check dist/amp-worklet.js && node --check dist/cabinets.js && node --check dist/gate-worklet.js && node --check dist/texture-worklet.js && node --check dist/settings.js && node --check dist/preset-pack.js && node --check dist/library.js",
+    "test": "node --test tests/*.test.mjs",
+    "measure": "node scripts/measure-amp.mjs"
   }
 }

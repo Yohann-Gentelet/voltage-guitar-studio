@@ -1,5 +1,6 @@
-import { clamp, dbToGain, makeCurve, createRoomImpulse, createDemoRiff } from './dsp.js';
-import { MODELS } from './settings.js';
+import { clamp, dbToGain, createRoomImpulse, createDemoRiff } from './dsp.js';
+import { VOICE_IDS } from './amp-dsp.js';
+import { CABINETS, loadCabinetBuffers, prepareCabinetBuffer } from './cabinets.js';
 
 const initializingGraphs=new WeakSet();
 const setParam=(param,value,ctx,time=0.02)=>{
@@ -15,9 +16,12 @@ const effect=(ctx,first,last=first)=>{
   return {input,output,dry,wet,setMix(mix){setParam(dry.gain,1-mix,ctx);setParam(wet.gain,mix,ctx);}};
 };
 
-export async function createAmpGraph(ctx,settings,{onLooper=()=>{},onError=()=>{}}={}) {
+export async function createAmpGraph(ctx,settings,{onLooper=()=>{},onError=()=>{},cabinetBuffers}={}) {
   await ctx.audioWorklet.addModule(new URL('./gate-worklet.js',import.meta.url));
   await ctx.audioWorklet.addModule(new URL('./texture-worklet.js',import.meta.url));
+  await ctx.audioWorklet.addModule(new URL('./amp-worklet.js',import.meta.url));
+  let builtinIRs=cabinetBuffers;
+  if(!builtinIRs){let failed=false;builtinIRs=await loadCabinetBuffers(ctx,{onFailure:()=>{failed=true;}});if(failed)onError('A measured cabinet could not load. A modeled cabinet will replace it; reconnect to retry.');}
   initializingGraphs.add(ctx);
   const input=ctx.createGain();input.channelCount=1;input.channelCountMode='explicit';
   const inputTrim=ctx.createGain(),rawInputAnalyser=ctx.createAnalyser();rawInputAnalyser.fftSize=1024;
@@ -34,17 +38,17 @@ export async function createAmpGraph(ctx,settings,{onLooper=()=>{},onError=()=>{
   };
   const octaveNode=textureNode('voltage-octave',1),octave=effect(ctx,octaveNode);
   const wahNode=textureNode('voltage-wah',1),wah=effect(ctx,wahNode);
-  const odPre=ctx.createGain(),odShape=ctx.createWaveShaper(),odTone=filter(ctx,'lowpass',5000),odLevel=ctx.createGain();
-  odShape.curve=makeCurve('overdrive');odShape.oversample='4x';odLevel.gain.value=0.65;
-  serial(odPre,odShape,odTone,odLevel);const overdrive=effect(ctx,odPre,odLevel);
-  const ampPre=ctx.createGain(),ampShape=ctx.createWaveShaper();ampShape.oversample='4x';
-  const dcBlock=filter(ctx,'highpass',30);
-  const bass=filter(ctx,'lowshelf',180),middle=filter(ctx,'peaking',750,0.8),treble=filter(ctx,'highshelf',2400),presence=filter(ctx,'peaking',3800,0.6),ampLevel=ctx.createGain();
-  serial(ampPre,ampShape,dcBlock,bass,middle,treble,presence,ampLevel);const amp=effect(ctx,ampPre,ampLevel);
-  const cabIn=ctx.createGain(),cabOut=ctx.createGain(),cabFilterGain=ctx.createGain(),cabDry=ctx.createGain(),cabIRGain=ctx.createGain();
+  // Overdrive, preamp, tone circuit and power saturation share one 4x domain.
+  const ampNode=new AudioWorkletNode(ctx,'voltage-amp',{outputChannelCount:[1]});
+  ampNode.onprocessorerror=()=>onError('The amplifier stopped. Disconnect and reconnect the guitar.');
+  const cabIn=ctx.createGain(),cabOut=ctx.createGain(),cabProcessed=ctx.createGain(),cabFilterGain=ctx.createGain(),cabDry=ctx.createGain(),cabIRGain=ctx.createGain();
   const cabHP=filter(ctx,'highpass',75),cabBody=filter(ctx,'peaking',160,0.8),cabLP=filter(ctx,'lowpass',5400,0.7),cabLP2=filter(ctx,'lowpass',6400,0.7),cabIR=ctx.createConvolver();
-  serial(cabIn,cabHP,cabBody,cabLP,cabLP2,cabFilterGain,cabOut);
-  cabIn.connect(cabDry).connect(cabOut);cabIn.connect(cabIR).connect(cabIRGain).connect(cabOut);
+  cabIR.normalize=false;
+  const cabHighCut=filter(ctx,'lowpass',8000,.707),measuredGains={};
+  serial(cabIn,cabHP,cabBody,cabLP,cabLP2,cabFilterGain,cabProcessed);
+  cabIn.connect(cabDry).connect(cabOut);cabIn.connect(cabIR).connect(cabIRGain).connect(cabProcessed);
+  for(const [id,buffer] of Object.entries(builtinIRs)){const convolver=ctx.createConvolver(),gain=ctx.createGain();convolver.normalize=false;convolver.buffer=buffer;cabIn.connect(convolver).connect(gain).connect(cabProcessed);measuredGains[id]=gain;}
+  serial(cabProcessed,cabHighCut,cabOut);
   const crusherNode=textureNode('voltage-crusher'),bitcrusher=effect(ctx,crusherNode);
   const noiseNode=textureNode('voltage-noise'),noise=effect(ctx,noiseNode);
   const chorusDelay=ctx.createDelay(0.1);chorusDelay.delayTime.value=0.018;
@@ -73,27 +77,30 @@ export async function createAmpGraph(ctx,settings,{onLooper=()=>{},onError=()=>{
   safety.curve=Float32Array.from({length:4097},(_,i)=>clamp(i/2048-1,-0.97,0.97));
   outputAnalyser.fftSize=1024;
   serial(input,rawInputAnalyser,inputTrim,inputAnalyser,gate,comp.input);
-  serial(comp.output,octave.input);serial(octave.output,wah.input);serial(wah.output,overdrive.input);serial(overdrive.output,amp.input);serial(amp.output,cabIn);
+  serial(comp.output,octave.input);serial(octave.output,wah.input);serial(wah.output,ampNode,cabIn);
   serial(cabOut,bitcrusher.input);serial(bitcrusher.output,noise.input);serial(noise.output,chorus.input);serial(chorus.output,phaser.input);serial(phaser.output,tremolo.input);
   serial(tremolo.output,ringmod.input);serial(ringmod.output,delay.input);serial(delay.output,reverb.input);
   serial(reverb.output,looper,guitarMute,master,preLimiterAnalyser,limiter,safety,outputAnalyser);
-  let lastModel,lastRoom,activeRoom=0,roomTimer;
+  let lastRoom,activeRoom=0,roomTimer;
   const graph={input,inputAnalyser,rawInputAnalyser,outputAnalyser,preLimiterAnalyser,master,guitarMute,looper,recordWet:outputAnalyser,recordDry:inputAnalyser,
     update(s){
-      const model=MODELS[s.model];
-      if(lastModel!==s.model){ampShape.curve=makeCurve(s.model);lastModel=s.model;}
-      setParam(ampPre.gain,0.7+(s.gain/100)**1.7*model.drive,ctx);
-      setParam(bass.gain,(s.bass-50)*0.24+model.low,ctx);setParam(middle.gain,(s.middle-50)*0.24+model.mid,ctx);setParam(treble.gain,(s.treble-50)*0.24+model.high,ctx);setParam(presence.gain,(s.presence-50)*0.16,ctx);
-      setParam(ampLevel.gain,model.output*s.level/100,ctx);amp.setMix(s.ampEnabled?1:0);
-      const cab=s.cabinet;const cabinet={open:[75,160,2,5500],british:[90,220,3,4700],stack:[85,130,4,3900]}[cab]||[75,160,2,5500];
+      // The DSP smooths continuous controls. A model index must never glide
+      // through intermediate models as an AudioParam ramp would do.
+      for(const key of ['gain','bass','middle','treble','presence','level','tightness','sag','power'])ampNode.parameters.get(key).value=s[key];
+      ampNode.parameters.get('model').value=VOICE_IDS.indexOf(s.model);ampNode.parameters.get('enabled').value=s.ampEnabled?1:0;
+      const cab=s.cabinet,measured=!!measuredGains[cab],fallback=CABINETS[cab]?.fallback;
+      this.cabinetFallback=!!fallback&&!measured;
+      const cabinet={open:[65,160,1.5,5700],british:[80,190,2,5100],stack:[75,130,2.5,4500]}[fallback||cab]||[65,160,1.5,5700];
       setParam(cabHP.frequency,cabinet[0],ctx);setParam(cabBody.frequency,cabinet[1],ctx);setParam(cabBody.gain,cabinet[2],ctx);setParam(cabLP.frequency,cabinet[3],ctx);setParam(cabLP2.frequency,cabinet[3]*1.2,ctx);
-      setParam(cabFilterGain.gain,cab!=='off'&&cab!=='custom'?1:0,ctx);setParam(cabDry.gain,cab==='off'?1:0,ctx);setParam(cabIRGain.gain,cab==='custom'?1:0,ctx);
+      setParam(cabFilterGain.gain,cab!=='off'&&cab!=='custom'&&!measured?1:0,ctx);setParam(cabDry.gain,cab==='off'?1:0,ctx);setParam(cabIRGain.gain,cab==='custom'?1:0,ctx);
+      for(const [id,gain] of Object.entries(measuredGains))setParam(gain.gain,id===cab?1:0,ctx);
+      setParam(cabHighCut.frequency,s.cabHighCut,ctx);
       const e=s.effects;const enabled=id=>!s.fxBypassed&&e[id].enabled;
       setParam(gate.parameters.get('enabled'),enabled('gate')?1:0,ctx);setParam(gate.parameters.get('threshold'),e.gate.threshold,ctx);setParam(gate.parameters.get('release'),e.gate.release,ctx);
       setParam(compressor.threshold,-12-e.compressor.amount*0.35,ctx);setParam(compressor.ratio,2+e.compressor.amount*0.08,ctx);setParam(compressor.knee,12,ctx);setParam(compressorMakeup.gain,dbToGain(e.compressor.makeup),ctx);comp.setMix(enabled('compressor')?1:0);
       setParam(octaveNode.parameters.get('tone'),e.octave.tone,ctx);octave.setMix(enabled('octave')?e.octave.mix/100:0);
       setParam(wahNode.parameters.get('sensitivity'),e.wah.sensitivity,ctx);setParam(wahNode.parameters.get('resonance'),e.wah.resonance,ctx);wah.setMix(enabled('wah')?e.wah.mix/100:0);
-      setParam(odPre.gain,1+e.overdrive.drive*0.14,ctx);setParam(odTone.frequency,800+e.overdrive.tone*75,ctx);overdrive.setMix(enabled('overdrive')?1:0);
+      ampNode.parameters.get('odEnabled').value=enabled('overdrive')?1:0;ampNode.parameters.get('odDrive').value=e.overdrive.drive;ampNode.parameters.get('odTone').value=e.overdrive.tone;
       setParam(crusherNode.parameters.get('bits'),e.bitcrusher.bits,ctx);setParam(crusherNode.parameters.get('rate'),e.bitcrusher.rate,ctx);bitcrusher.setMix(enabled('bitcrusher')?e.bitcrusher.mix/100:0);
       setParam(noiseNode.parameters.get('hiss'),e.noise.hiss,ctx);setParam(noiseNode.parameters.get('crackle'),e.noise.crackle,ctx);setParam(noiseNode.parameters.get('tone'),e.noise.tone,ctx);noise.setMix(enabled('noise')?1:0);
       setParam(chorusLfo.frequency,e.chorus.rate,ctx);setParam(chorusDepth.gain,e.chorus.depth*0.00006,ctx);chorus.setMix(enabled('chorus')?e.chorus.mix/100:0);
@@ -112,8 +119,8 @@ export async function createAmpGraph(ctx,settings,{onLooper=()=>{},onError=()=>{
     setMaster(volume,muted){setParam(master.gain,muted?0:(volume/100)**1.6,ctx,0.008);},
     setTrim(db){setParam(inputTrim.gain,dbToGain(db),ctx);},
     setTuning(muted){setParam(guitarMute.gain,muted?0:1,ctx,0.008);},
-    setIR(buffer){cabIR.buffer=buffer;},
-    dispose(){clearTimeout(roomTimer);[chorusLfo,phaserLfo,tremoloLfo,ringCarrier].forEach(n=>n.stop());looper.port.close();gate.port.close();textureNodes.forEach(n=>n.port.close());}
+    setIR(buffer){cabIR.buffer=prepareCabinetBuffer(ctx,buffer);},
+    dispose(){clearTimeout(roomTimer);[chorusLfo,phaserLfo,tremoloLfo,ringCarrier].forEach(n=>n.stop());looper.port.close();gate.port.close();ampNode.port.close();textureNodes.forEach(n=>n.port.close());}
   };
   graph.update(settings);initializingGraphs.delete(ctx);
   return graph;

@@ -17,6 +17,7 @@ const effect=(ctx,first,last=first)=>{
 
 export async function createAmpGraph(ctx,settings,{onLooper=()=>{},onError=()=>{}}={}) {
   await ctx.audioWorklet.addModule(new URL('./gate-worklet.js',import.meta.url));
+  await ctx.audioWorklet.addModule(new URL('./texture-worklet.js',import.meta.url));
   initializingGraphs.add(ctx);
   const input=ctx.createGain();input.channelCount=1;input.channelCountMode='explicit';
   const inputTrim=ctx.createGain(),rawInputAnalyser=ctx.createAnalyser();rawInputAnalyser.fftSize=1024;
@@ -26,6 +27,13 @@ export async function createAmpGraph(ctx,settings,{onLooper=()=>{},onError=()=>{
   const compressor=ctx.createDynamicsCompressor();compressor.attack.value=0.006;compressor.release.value=0.16;
   const compressorMakeup=ctx.createGain();compressor.connect(compressorMakeup);
   const comp=effect(ctx,compressor,compressorMakeup);
+  const textureNodes=[];
+  const textureNode=(processor,channels=2)=>{
+    const node=new AudioWorkletNode(ctx,processor,{outputChannelCount:[channels]});
+    node.onprocessorerror=()=>onError('A texture effect stopped. Disconnect and reconnect the guitar.');textureNodes.push(node);return node;
+  };
+  const octaveNode=textureNode('voltage-octave',1),octave=effect(ctx,octaveNode);
+  const wahNode=textureNode('voltage-wah',1),wah=effect(ctx,wahNode);
   const odPre=ctx.createGain(),odShape=ctx.createWaveShaper(),odTone=filter(ctx,'lowpass',5000),odLevel=ctx.createGain();
   odShape.curve=makeCurve('overdrive');odShape.oversample='4x';odLevel.gain.value=0.65;
   serial(odPre,odShape,odTone,odLevel);const overdrive=effect(ctx,odPre,odLevel);
@@ -37,6 +45,8 @@ export async function createAmpGraph(ctx,settings,{onLooper=()=>{},onError=()=>{
   const cabHP=filter(ctx,'highpass',75),cabBody=filter(ctx,'peaking',160,0.8),cabLP=filter(ctx,'lowpass',5400,0.7),cabLP2=filter(ctx,'lowpass',6400,0.7),cabIR=ctx.createConvolver();
   serial(cabIn,cabHP,cabBody,cabLP,cabLP2,cabFilterGain,cabOut);
   cabIn.connect(cabDry).connect(cabOut);cabIn.connect(cabIR).connect(cabIRGain).connect(cabOut);
+  const crusherNode=textureNode('voltage-crusher'),bitcrusher=effect(ctx,crusherNode);
+  const noiseNode=textureNode('voltage-noise'),noise=effect(ctx,noiseNode);
   const chorusDelay=ctx.createDelay(0.1);chorusDelay.delayTime.value=0.018;
   const chorusLfo=ctx.createOscillator(),chorusDepth=ctx.createGain();chorusLfo.connect(chorusDepth).connect(chorusDelay.delayTime);chorusLfo.start();
   const chorus=effect(ctx,chorusDelay);
@@ -45,6 +55,8 @@ export async function createAmpGraph(ctx,settings,{onLooper=()=>{},onError=()=>{
   phasers.forEach(n=>phaserDepth.connect(n.frequency));phaserLfo.start();const phaser=effect(ctx,phasers[0],phasers.at(-1));
   const tremoloGain=ctx.createGain(),tremoloLfo=ctx.createOscillator(),tremoloDepth=ctx.createGain();tremoloLfo.connect(tremoloDepth).connect(tremoloGain.gain);tremoloLfo.start();
   const tremolo=effect(ctx,tremoloGain);
+  const ringGain=ctx.createGain(),ringCarrier=ctx.createOscillator(),ringDC=filter(ctx,'highpass',20),ringTone=filter(ctx,'lowpass',4500);
+  ringGain.gain.value=0;ringCarrier.connect(ringGain.gain);ringCarrier.start();serial(ringGain,ringDC,ringTone);const ringmod=effect(ctx,ringGain,ringTone);
   const delayNode=ctx.createDelay(1.5),delayFeedback=ctx.createGain(),delayTone=filter(ctx,'lowpass',3500);serial(delayNode,delayTone,delayFeedback,delayNode);
   const delay=effect(ctx,delayNode);
   // Alternate convolvers allow a short crossfade while changing room length.
@@ -60,7 +72,11 @@ export async function createAmpGraph(ctx,settings,{onLooper=()=>{},onError=()=>{
   limiter.threshold.value=-3;limiter.knee.value=0;limiter.ratio.value=20;limiter.attack.value=0.001;limiter.release.value=0.08;
   safety.curve=Float32Array.from({length:4097},(_,i)=>clamp(i/2048-1,-0.97,0.97));
   outputAnalyser.fftSize=1024;
-  serial(input,rawInputAnalyser,inputTrim,inputAnalyser,gate,comp.input);serial(comp.output,overdrive.input);serial(overdrive.output,amp.input);serial(amp.output,cabIn);serial(cabOut,chorus.input);serial(chorus.output,phaser.input);serial(phaser.output,tremolo.input);serial(tremolo.output,delay.input);serial(delay.output,reverb.input);serial(reverb.output,looper,guitarMute,master,preLimiterAnalyser,limiter,safety,outputAnalyser);
+  serial(input,rawInputAnalyser,inputTrim,inputAnalyser,gate,comp.input);
+  serial(comp.output,octave.input);serial(octave.output,wah.input);serial(wah.output,overdrive.input);serial(overdrive.output,amp.input);serial(amp.output,cabIn);
+  serial(cabOut,bitcrusher.input);serial(bitcrusher.output,noise.input);serial(noise.output,chorus.input);serial(chorus.output,phaser.input);serial(phaser.output,tremolo.input);
+  serial(tremolo.output,ringmod.input);serial(ringmod.output,delay.input);serial(delay.output,reverb.input);
+  serial(reverb.output,looper,guitarMute,master,preLimiterAnalyser,limiter,safety,outputAnalyser);
   let lastModel,lastRoom,activeRoom=0,roomTimer;
   const graph={input,inputAnalyser,rawInputAnalyser,outputAnalyser,preLimiterAnalyser,master,guitarMute,looper,recordWet:outputAnalyser,recordDry:inputAnalyser,
     update(s){
@@ -75,10 +91,15 @@ export async function createAmpGraph(ctx,settings,{onLooper=()=>{},onError=()=>{
       const e=s.effects;const enabled=id=>!s.fxBypassed&&e[id].enabled;
       setParam(gate.parameters.get('enabled'),enabled('gate')?1:0,ctx);setParam(gate.parameters.get('threshold'),e.gate.threshold,ctx);setParam(gate.parameters.get('release'),e.gate.release,ctx);
       setParam(compressor.threshold,-12-e.compressor.amount*0.35,ctx);setParam(compressor.ratio,2+e.compressor.amount*0.08,ctx);setParam(compressor.knee,12,ctx);setParam(compressorMakeup.gain,dbToGain(e.compressor.makeup),ctx);comp.setMix(enabled('compressor')?1:0);
+      setParam(octaveNode.parameters.get('tone'),e.octave.tone,ctx);octave.setMix(enabled('octave')?e.octave.mix/100:0);
+      setParam(wahNode.parameters.get('sensitivity'),e.wah.sensitivity,ctx);setParam(wahNode.parameters.get('resonance'),e.wah.resonance,ctx);wah.setMix(enabled('wah')?e.wah.mix/100:0);
       setParam(odPre.gain,1+e.overdrive.drive*0.14,ctx);setParam(odTone.frequency,800+e.overdrive.tone*75,ctx);overdrive.setMix(enabled('overdrive')?1:0);
+      setParam(crusherNode.parameters.get('bits'),e.bitcrusher.bits,ctx);setParam(crusherNode.parameters.get('rate'),e.bitcrusher.rate,ctx);bitcrusher.setMix(enabled('bitcrusher')?e.bitcrusher.mix/100:0);
+      setParam(noiseNode.parameters.get('hiss'),e.noise.hiss,ctx);setParam(noiseNode.parameters.get('crackle'),e.noise.crackle,ctx);setParam(noiseNode.parameters.get('tone'),e.noise.tone,ctx);noise.setMix(enabled('noise')?1:0);
       setParam(chorusLfo.frequency,e.chorus.rate,ctx);setParam(chorusDepth.gain,e.chorus.depth*0.00006,ctx);chorus.setMix(enabled('chorus')?e.chorus.mix/100:0);
       setParam(phaserLfo.frequency,e.phaser.rate,ctx);setParam(phaserDepth.gain,e.phaser.depth*2.5,ctx);phaser.setMix(enabled('phaser')?e.phaser.mix/100:0);
       setParam(tremoloLfo.frequency,e.tremolo.rate,ctx);setParam(tremoloDepth.gain,e.tremolo.depth/200,ctx);setParam(tremoloGain.gain,1-e.tremolo.depth/200,ctx);tremolo.setMix(enabled('tremolo')?1:0);
+      setParam(ringCarrier.frequency,e.ringmod.frequency,ctx);setParam(ringTone.frequency,400*24**(e.ringmod.tone/100),ctx);ringmod.setMix(enabled('ringmod')?e.ringmod.mix/100:0);
       setParam(delayNode.delayTime,e.delay.time/1000,ctx,0.05);setParam(delayFeedback.gain,e.delay.feedback/100,ctx);delay.setMix(enabled('delay')?e.delay.mix/100:0);
       const roomKey=`${e.reverb.decay}/${e.reverb.tone}`;
       clearTimeout(roomTimer);
@@ -92,7 +113,7 @@ export async function createAmpGraph(ctx,settings,{onLooper=()=>{},onError=()=>{
     setTrim(db){setParam(inputTrim.gain,dbToGain(db),ctx);},
     setTuning(muted){setParam(guitarMute.gain,muted?0:1,ctx,0.008);},
     setIR(buffer){cabIR.buffer=buffer;},
-    dispose(){clearTimeout(roomTimer);[chorusLfo,phaserLfo,tremoloLfo].forEach(n=>n.stop());looper.port.close();gate.port.close();}
+    dispose(){clearTimeout(roomTimer);[chorusLfo,phaserLfo,tremoloLfo,ringCarrier].forEach(n=>n.stop());looper.port.close();gate.port.close();textureNodes.forEach(n=>n.port.close());}
   };
   graph.update(settings);initializingGraphs.delete(ctx);
   return graph;

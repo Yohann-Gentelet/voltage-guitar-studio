@@ -2,3 +2,7 @@ node_modules/
 .sites-runtime/
 test-results/
 artifacts/
+.env
+.env.*
+!.env.example
+*.log

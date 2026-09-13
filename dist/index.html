@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#181a1c" />
   <meta name="description" content="Your guitar, your sound. A live guitar amp with cabinet shaping, a pedalboard, tuner, and recording. Audio stays on your computer." />
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css" />
   <title>Voltage — Guitar Studio</title>
 </head>
 <body>
   <div class="studio">
     <header class="topbar">
-      <a class="brand" href="/" aria-label="Voltage home"><span class="brand-mark">ϟ</span>VOLTAGE<span class="brand-sub">GUITAR STUDIO</span></a>
+      <a class="brand" href="./" aria-label="Voltage home"><span class="brand-mark">ϟ</span>VOLTAGE<span class="brand-sub">GUITAR STUDIO</span></a>
       <div class="top-status"><span class="status-dot" id="status-dot"></span><span id="connection-status">Audio offline</span></div>
       <button class="button subtle" id="help-button"><span aria-hidden="true">?</span> Setup guide</button>
       <button class="button primary" id="connect-button"><span aria-hidden="true">⏻</span> Connect guitar</button>
@@ -21,7 +21,9 @@
       <div class="section-label">YOUR TONE LIBRARY</div>
       <h2>Find your sound.</h2>
       <div class="library-tabs"><button class="selected" data-library="factory">Factory</button><button data-library="saved">My presets <span id="saved-count">0</span></button></div>
-      <div id="preset-list" class="preset-list"></div>
+      <label class="preset-search"><span>Find a tone or effect</span><input id="preset-search" type="search" placeholder="Try chorus, dust, wah…" autocomplete="off" /></label>
+      <div class="library-location"><button id="folder-back" class="folder-back" aria-label="Back to preset folders" hidden>←</button><div><h3 id="folder-heading" tabindex="-1">Folders</h3><p id="folder-count" role="status"></p></div></div>
+      <div id="preset-list" class="preset-list" aria-labelledby="folder-heading"></div>
       <button id="save-preset" class="button save-button"><span aria-hidden="true">＋</span> Save current tone</button>
       <div class="sidebar-bottom"><div class="mini-wave" aria-hidden="true">▂ ▅ ▃ █ ▆ ▂ ▄ ▇ ▃ ▂</div><strong>Just plug in. Play out.</strong><p>Guitar → USB interface → Voltage.<br />Headphones recommended.</p></div>
     </aside>
@@ -56,7 +58,9 @@
   <dialog id="help-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close setup guide">×</button></form><span class="section-label">LET’S GET CONNECTED</span><h2>Your guitar. Meet Voltage.</h2><ol class="setup-steps"><li><strong>Plug into an audio interface.</strong><p>Connect your guitar to a USB audio interface’s instrument/Hi-Z input, then plug the interface into your computer. A guitar needs an instrument input; a simple cable into a headphone jack won’t do the job.</p></li><li><strong>Connect wired headphones.</strong><p>Use the interface’s headphone output. Turn off its direct monitoring so you only hear the processed tone. Start with low hardware gain and volume.</p></li><li><strong>Power up and choose your input.</strong><p>Click Connect guitar, allow audio input access, then select your interface and the channel your guitar uses. Play hard and keep the input meter below clipping.</p></li></ol><div class="help-note">For the best response, use Chrome or Edge and wired headphones. Bluetooth adds delay. Browser and driver latency varies; Voltage cannot select an ASIO driver.</div><button class="button primary" id="help-done">Let’s play</button></dialog>
   <dialog id="settings-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close audio settings">×</button></form><span class="section-label">AUDIO SETTINGS</span><h2>Fine-tune your connection.</h2><label class="setting-row">Output device<select id="output-device"><option value="">System default</option></select></label><p id="output-hint">Use your system sound settings if output selection is unavailable.</p><label class="setting-row">Input trim <input id="input-trim" type="range" min="-24" max="24" step="1" value="0"/><output id="input-trim-value">0 dB</output></label><label class="setting-row">Recording format<select id="record-format"><option value="processed">Processed mix (guitar, loop + click)</option><option value="dry">Dry guitar (before effects)</option></select></label><div class="help-note" id="audio-details">Connect your guitar to see the sample rate and estimated output latency.</div><p>Recordings use your browser's supported audio format (usually WebM/Opus), with a 30-minute limit. Download before leaving. Presets stay in this browser; custom cabinet IRs and loops are session-only. Built-in cabinets use speaker-style filters.</p><p>Shortcuts: <strong>M</strong> mute output · <strong>T</strong> tuner.</p></dialog>
   <dialog id="tuner-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close tuner">×</button></form><span class="section-label">CHROMATIC TUNER</span><h2>Make every note count.</h2><div class="tuner-note" id="tuner-note">—</div><div id="tuner-frequency">Play one open string</div><div class="tuner-scale"><span>♭</span><div><i id="tuner-needle"></i><b></b></div><span>♯</span></div><div id="tuner-cents">Waiting for input</div><label class="tuner-mute"><input type="checkbox" id="tuner-mute" checked/> Mute guitar while tuning</label><div class="guitar-strings"><span>E₂</span><span>A₂</span><span>D₃</span><span>G₃</span><span>B₃</span><span>E₄</span></div></dialog>
-  <dialog id="save-dialog"><form id="save-form"><button type="button" class="dialog-close" id="close-save" aria-label="Close save preset">×</button><span class="section-label">YOUR TONE LIBRARY</span><h2>Give this tone a name.</h2><label class="setting-row">Preset name<input id="preset-name" maxlength="40" required placeholder="My favorite tone" autocomplete="off" /></label><button type="submit" class="button primary">Save preset</button></form></dialog>
-  <script type="module" src="/app.js"></script>
+  <dialog id="save-dialog"><form id="save-form"><button type="button" class="dialog-close" id="close-save" aria-label="Close save preset">×</button><span class="section-label">YOUR TONE LIBRARY</span><h2>Give this tone a name.</h2><label class="setting-row">Preset name<input id="preset-name" maxlength="40" required placeholder="My favorite tone" autocomplete="off" /></label><label class="setting-row">Folder<input id="preset-folder" list="saved-folder-options" maxlength="40" placeholder="My tones" autocomplete="off" aria-describedby="save-folder-hint" /></label><p id="save-folder-hint" class="folder-hint">Choose an existing folder or type a new name. Saved on this device.</p><button type="submit" class="button primary">Save preset</button></form></dialog>
+  <dialog id="move-dialog"><form id="move-form"><button type="button" class="dialog-close" id="close-move" aria-label="Close move preset">×</button><span class="section-label">MY PRESETS</span><h2>Move to a folder.</h2><p id="move-preset-name" class="folder-hint"></p><label class="setting-row">Folder<input id="move-folder" list="saved-folder-options" maxlength="40" placeholder="My tones" autocomplete="off" aria-describedby="move-folder-hint" /></label><p id="move-folder-hint" class="folder-hint">Choose an existing folder or type a new name.</p><button type="submit" class="button primary">Move preset</button></form></dialog>
+  <datalist id="saved-folder-options"></datalist>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>

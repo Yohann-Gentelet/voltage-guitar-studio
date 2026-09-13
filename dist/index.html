@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#181a1c" />
+  <meta name="description" content="Your guitar, your sound. A live guitar amp with cabinet shaping, a pedalboard, tuner, and recording. Audio stays on your computer." />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+  <title>Voltage — Guitar Studio</title>
+</head>
+<body>
+  <div class="studio">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Voltage home"><span class="brand-mark">ϟ</span>VOLTAGE<span class="brand-sub">GUITAR STUDIO</span></a>
+      <div class="top-status"><span class="status-dot" id="status-dot"></span><span id="connection-status">Audio offline</span></div>
+      <button class="button subtle" id="help-button"><span aria-hidden="true">?</span> Setup guide</button>
+      <button class="button primary" id="connect-button"><span aria-hidden="true">⏻</span> Connect guitar</button>
+    </header>
+    <aside class="sidebar">
+      <div class="section-label">YOUR TONE LIBRARY</div>
+      <h2>Find your sound.</h2>
+      <div class="library-tabs"><button class="selected" data-library="factory">Factory</button><button data-library="saved">My presets <span id="saved-count">0</span></button></div>
+      <div id="preset-list" class="preset-list"></div>
+      <button id="save-preset" class="button save-button"><span aria-hidden="true">＋</span> Save current tone</button>
+      <div class="sidebar-bottom"><div class="mini-wave" aria-hidden="true">▂ ▅ ▃ █ ▆ ▂ ▄ ▇ ▃ ▂</div><strong>Just plug in. Play out.</strong><p>Guitar → USB interface → Voltage.<br />Headphones recommended.</p></div>
+    </aside>
+    <main>
+      <section class="session-heading"><div><div class="eyebrow">THE LIVE ROOM <span>/ 01</span></div><h1 id="tone-title">California Clean</h1><p id="tone-description">Open, glassy chords with a little room to breathe.</p></div><div class="heading-actions"><span class="session-badge" id="tone-badge">FACTORY PRESET</span><button class="text-button" id="demo-button">Try a demo riff ↗</button></div></section>
+      <section class="io-strip" aria-label="Audio routing">
+        <label class="device-field"><span>INPUT DEVICE</span><select id="input-device"><option value="">System default</option></select></label>
+        <label class="channel-field"><span>CHANNEL</span><select id="input-channel"><option value="0">Input 1 / L</option><option value="1">Input 2 / R</option></select></label>
+        <div class="meter-field"><div><span>INPUT</span><span id="input-db">−∞ dB</span></div><div class="meter-track"><div id="input-meter"></div></div></div>
+        <div class="latency-field"><span>OUTPUT LATENCY</span><strong id="latency-value">— <small>ms</small></strong></div>
+        <button id="settings-button" class="icon-button" aria-label="Audio settings" title="Audio settings">⚙</button>
+      </section>
+      <p id="connection-error" class="connection-error" role="alert" hidden></p>
+      <section class="amp" aria-label="Amplifier">
+        <div class="amp-top"><div><span class="section-label">AMPLIFIER</span><h2><span id="amp-model-name">American Clean</span><span class="amp-model-tag" id="amp-model-tag">WIDE & BRIGHT</span></h2></div><button id="amp-bypass" class="power-button active" aria-label="Bypass amplifier" aria-pressed="true">⏻</button></div>
+        <div class="amp-models" aria-label="Amplifier model"><button data-amp="clean" class="active">American Clean</button><button data-amp="chime">British Chime</button><button data-amp="crunch">Vintage Crunch</button><button data-amp="lead">Modern High Gain</button></div>
+        <div class="amp-controls" id="amp-controls"></div>
+        <div class="amp-bottom"><span class="amp-signature">Voltage <i>Originals</i></span><label>CABINET <select id="cabinet"><option value="open">1×12 Open Back</option><option value="british">2×12 British</option><option value="stack">4×12 Closed Stack</option><option value="off">Cabinet off</option></select></label><label class="ir-import" title="Load your own cabinet impulse response">Load IR<input type="file" id="ir-file" accept="audio/*,.wav" /></label><span id="cabinet-status">CAB SIM ON</span></div>
+      </section>
+      <section class="pedalboard" aria-label="Effects pedalboard"><div class="section-heading"><div><span class="section-label">PEDALBOARD</span><h2>A little character.</h2></div><button class="text-button" id="bypass-effects">Bypass effects</button></div><div class="signal-chain"><span>INPUT</span><div id="chain-labels"></div><span>OUTPUT</span></div><div id="pedals" class="pedals"></div></section>
+      <section class="practice-strip" aria-label="Practice tools">
+        <button id="tuner-button" class="tool-launch"><span class="tool-icon" aria-hidden="true">♮</span><span><strong>Tuner</strong><small id="tuner-summary">Standard · A4 = 440 Hz</small></span><span class="tool-arrow">↗</span></button>
+        <div class="metronome-tool"><button id="metronome-button" class="tool-launch" aria-pressed="false"><span class="tool-icon" aria-hidden="true">♩</span><span><strong>Metronome</strong><small id="metronome-status">Keep your own time</small></span></button><label><input id="bpm" type="number" min="30" max="240" value="100" aria-label="Tempo in beats per minute" /><span>BPM</span></label><button class="text-button" id="tap-tempo">Tap</button></div>
+        <div class="record-tool"><button id="record-button" class="tool-launch"><span class="record-dot" aria-hidden="true"></span><span><strong id="record-label">Record a take</strong><small id="record-time">00:00</small></span></button><a id="download-recording" class="text-button" hidden>Download ↧</a></div>
+      </section>
+      <section class="looper-strip" aria-label="Guitar looper"><div><span class="section-label">LOOPER</span><p id="looper-status">60 seconds · Unlimited overdubs</p></div><div class="looper-actions"><button id="looper-button" class="button">Record loop</button><button id="looper-overdub" class="button subtle" disabled>Overdub</button><button id="looper-clear" class="text-button" disabled>Clear</button></div></section>
+      <footer><span id="engine-status">READY WHEN YOU ARE</span><span>Audio stays on this device <span aria-hidden="true">·</span> Made for making noise.</span></footer>
+    </main>
+    <aside class="master-strip" aria-label="Master output"><span class="section-label">MASTER</span><button id="mute-button" class="icon-button" aria-label="Mute output" aria-pressed="false">◖))</button><div class="output-meter"><div id="output-meter"></div></div><input type="range" id="master-volume" min="0" max="100" value="35" aria-label="Master output volume" /><output id="master-value">35%</output><span id="clip-indicator">CLEAN</span><span class="master-bottom">OUT<br />1 / 2</span></aside>
+  </div>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <dialog id="help-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close setup guide">×</button></form><span class="section-label">LET’S GET CONNECTED</span><h2>Your guitar. Meet Voltage.</h2><ol class="setup-steps"><li><strong>Plug into an audio interface.</strong><p>Connect your guitar to a USB audio interface’s instrument/Hi-Z input, then plug the interface into your computer. A guitar needs an instrument input; a simple cable into a headphone jack won’t do the job.</p></li><li><strong>Connect wired headphones.</strong><p>Use the interface’s headphone output. Turn off its direct monitoring so you only hear the processed tone. Start with low hardware gain and volume.</p></li><li><strong>Power up and choose your input.</strong><p>Click Connect guitar, allow audio input access, then select your interface and the channel your guitar uses. Play hard and keep the input meter below clipping.</p></li></ol><div class="help-note">For the best response, use Chrome or Edge and wired headphones. Bluetooth adds delay. Browser and driver latency varies; Voltage cannot select an ASIO driver.</div><button class="button primary" id="help-done">Let’s play</button></dialog>
+  <dialog id="settings-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close audio settings">×</button></form><span class="section-label">AUDIO SETTINGS</span><h2>Fine-tune your connection.</h2><label class="setting-row">Output device<select id="output-device"><option value="">System default</option></select></label><p id="output-hint">Use your system sound settings if output selection is unavailable.</p><label class="setting-row">Input trim <input id="input-trim" type="range" min="-24" max="24" step="1" value="0"/><output id="input-trim-value">0 dB</output></label><label class="setting-row">Recording format<select id="record-format"><option value="processed">Processed mix (guitar, loop + click)</option><option value="dry">Dry guitar (before effects)</option></select></label><div class="help-note" id="audio-details">Connect your guitar to see the sample rate and estimated output latency.</div><p>Recordings use your browser's supported audio format (usually WebM/Opus), with a 30-minute limit. Download before leaving. Presets stay in this browser; custom cabinet IRs and loops are session-only. Built-in cabinets use speaker-style filters.</p><p>Shortcuts: <strong>M</strong> mute output · <strong>T</strong> tuner.</p></dialog>
+  <dialog id="tuner-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close tuner">×</button></form><span class="section-label">CHROMATIC TUNER</span><h2>Make every note count.</h2><div class="tuner-note" id="tuner-note">—</div><div id="tuner-frequency">Play one open string</div><div class="tuner-scale"><span>♭</span><div><i id="tuner-needle"></i><b></b></div><span>♯</span></div><div id="tuner-cents">Waiting for input</div><label class="tuner-mute"><input type="checkbox" id="tuner-mute" checked/> Mute guitar while tuning</label><div class="guitar-strings"><span>E₂</span><span>A₂</span><span>D₃</span><span>G₃</span><span>B₃</span><span>E₄</span></div></dialog>
+  <dialog id="save-dialog"><form id="save-form"><button type="button" class="dialog-close" id="close-save" aria-label="Close save preset">×</button><span class="section-label">YOUR TONE LIBRARY</span><h2>Give this tone a name.</h2><label class="setting-row">Preset name<input id="preset-name" maxlength="40" required placeholder="My favorite tone" autocomplete="off" /></label><button type="submit" class="button primary">Save preset</button></form></dialog>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
